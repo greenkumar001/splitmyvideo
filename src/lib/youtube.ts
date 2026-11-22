@@ -84,7 +84,7 @@ export function loadGoogleIdentityScript(): Promise<void> {
 }
 
 export async function getYouTubeAccessToken(): Promise<string> {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID;
+  const clientId = process.env.GOOGLE_CLIENT_ID;
 
   if (!clientId) {
     throw new Error("Google Client ID is missing from .env.local.");
