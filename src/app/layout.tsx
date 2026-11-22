@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteUrl = "https://splitmyvideo.vercel.app";
+const siteUrl = "https://splitmyvideo.acustardtechnologies.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
