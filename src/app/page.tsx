@@ -19,18 +19,45 @@ import Header from "@/components/Header";
 import VideoUploader from "@/components/VideoUploader";
 import SplitControls from "@/components/SplitControls";
 import VideoResults from "@/components/VideoResults";
-import { splitVideo, type SplitResult } from "@/lib/ffmpeg";
+import {
+  splitVideo,
+  SplitVideoError,
+} from "@/lib/ffmpeg";
+import {
+  getStoredClips,
+  type StoredClip,
+} from "@/lib/video-storage";
 
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [duration, setDuration] = useState(15);
   const [previewUrl, setPreviewUrl] = useState("");
-  const [results, setResults] = useState<SplitResult[]>([]);
+  const [results, setResults] = useState<StoredClip[]>([]);
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [processing, setProcessing] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
 
+    async function restoreClips() {
+      try {
+        const savedClips = await getStoredClips();
+
+        if (!cancelled) {
+          setResults(savedClips);
+        }
+      } catch (error) {
+        console.error("Could not restore saved clips:", error);
+      }
+    }
+
+    restoreClips();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     if (!file) {
       setPreviewUrl("");
@@ -63,9 +90,9 @@ export default function Home() {
 
     // Temporary safety limit for this browser-based development build.
     // Large-file support needs further memory engineering.
-    if (file.size > 250 * 1024 * 1024) {
+    if (file.size > 800 * 1024 * 1024) {
       setError(
-        "This development version is not ready for videos above 250 MB. " +
+        "This development version is not ready for videos above 800 MB. " +
         "Please test with a smaller video first to avoid browser memory crashes."
       );
       return;
@@ -90,11 +117,19 @@ export default function Home() {
     } catch (err) {
       console.error("Video splitting error:", err);
 
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Video processing failed. Please try another video."
-      );
+      if (err instanceof SplitVideoError) {
+        setResults(err.clips);
+
+        setError(
+          `${err.message} ${err.clips.length} completed clip(s) were saved and are available below.`
+        );
+      } else {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Video processing failed. Please try another video."
+        );
+      }
     } finally {
       setProcessing(false);
     }
@@ -378,7 +413,7 @@ export default function Home() {
                   <CheckCircle2 className="text-green-600" size={22} />
                   <div>
                     <h3 className="font-bold text-gray-900">
-                      Video split successfully!
+                      {error ? "Partial results saved" : "Video split successfully!"}
                     </h3>
                     <p className="text-xs text-gray-500">
                       {results.length} video clips are ready.
@@ -386,7 +421,10 @@ export default function Home() {
                   </div>
                 </div>
 
-                <VideoResults results={results} />
+                <VideoResults
+                  results={results}
+                  onResultsChange={setResults}
+                />
               </div>
             )}
 

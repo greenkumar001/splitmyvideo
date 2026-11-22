@@ -1,5 +1,49 @@
-import { FFmpeg } from "@ffmpeg/ffmpeg";
 
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import {
+  saveClip,
+  getStorageInfo,
+  type StoredClip,
+} from "@/lib/video-storage";
+export class SplitVideoError extends Error {
+  constructor(
+    message: string,
+    public clips: StoredClip[]
+  ) {
+    super(message);
+    this.name = "SplitVideoError";
+  }
+}
+function getVideoErrorMessage(error: unknown): string {
+  const message =
+    error instanceof Error ? error.message : String(error);
+
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    lowerMessage.includes("memory") ||
+    lowerMessage.includes("out of memory") ||
+    lowerMessage.includes("allocation failed") ||
+    lowerMessage.includes("abort")
+  ) {
+    return (
+      "Your browser ran out of memory while processing this video. " +
+      "Try a smaller video or shorter clips, and close other browser tabs."
+    );
+  }
+
+  if (
+    lowerMessage.includes("quota") ||
+    lowerMessage.includes("storage") ||
+    lowerMessage.includes("space")
+  ) {
+    return (
+      "Browser storage is insufficient. Delete old clips or free up storage."
+    );
+  }
+
+  return message || "Video processing failed. Please try another video.";
+}
 let ffmpeg: FFmpeg | null = null;
 let isLoaded = false;
 
@@ -22,27 +66,43 @@ export async function getFFmpeg(onStatus?: (message: string) => void) {
   return ffmpeg;
 }
 
-export type SplitResult = {
-  name: string;
-  blob: Blob;
-};
-
 export async function splitVideo(
   file: File,
   duration: number,
   onProgress?: (progress: number) => void,
   onStatus?: (message: string) => void
-): Promise<SplitResult[]> {
+): Promise<StoredClip[]> {
+  if (!(file instanceof File) || file.size <= 0) {
+  throw new Error("Please select a valid video file.");
+}
+
+if (!Number.isFinite(duration) || duration <= 0) {
+  throw new Error("Please select a valid clip duration.");
+}
+
+onStatus?.("Checking available browser storage...");
+
+const storageInfo = await getStorageInfo();
+
+if (
+  storageInfo &&
+  storageInfo.available < file.size
+) {
+  throw new Error(
+    "Not enough estimated browser storage available. " +
+    "Please free up browser storage or use a smaller video."
+  );
+}
   const engine = await getFFmpeg(onStatus);
 
-  const inputName = "input_video";
-  const outputFiles: string[] = [];
+  const mountPoint = `/input_${Date.now()}`;
+  const safeFileName = file.name.replace(/[\\/]/g, "_") || "input_video";
+  const inputPath = `${mountPoint}/${safeFileName}`;
 
-  onStatus?.("Reading video...");
+  let mounted = false;
+
+  onStatus?.("Reading video metadata...");
   onProgress?.(0);
-
-  const fileData = new Uint8Array(await file.arrayBuffer());
-  await engine.writeFile(inputName, fileData);
 
   const videoDuration = await new Promise<number>((resolve, reject) => {
     const video = document.createElement("video");
@@ -68,26 +128,46 @@ export async function splitVideo(
   }
 
   const totalParts = Math.ceil(videoDuration / duration);
-  const results: SplitResult[] = [];
+  const results: StoredClip[] = [];
+  let completed = false;
 
   let currentPart = 0;
+  let progressListenerAttached = false;
 
-  engine.on("progress", ({ progress }) => {
-    const overall = ((currentPart + progress) / totalParts) * 100;
-    onProgress?.(Math.min(99, Math.round(overall)));
-  });
+const handleProgress = ({ progress }: { progress: number }) => {
+  const overall = ((currentPart + progress) / totalParts) * 100;
+  onProgress?.(Math.min(99, Math.round(overall)));
+};
 
   try {
+    onStatus?.("Preparing browser storage...");
+
+    await engine.createDir(mountPoint);
+
+    await engine.mount(
+      "WORKERFS" as unknown as Parameters<typeof engine.mount>[0],
+      { files: [file] },
+      mountPoint
+    );
+
+    mounted = true;
+
+    onStatus?.("Original video mounted successfully.");
+
+   engine.on("progress", handleProgress);
+progressListenerAttached = true;
+
     for (let i = 0; i < totalParts; i++) {
       const start = i * duration;
       const clipDuration = Math.min(duration, videoDuration - start);
+
       const outputName = `part_${String(i + 1).padStart(3, "0")}.mp4`;
 
       onStatus?.(`Creating clip ${i + 1} of ${totalParts}...`);
 
       const exitCode = await engine.exec([
         "-ss", String(start),
-        "-i", inputName,
+        "-i", inputPath,
         "-t", String(clipDuration),
         "-map", "0:v:0",
         "-map", "0:a?",
@@ -105,31 +185,66 @@ export async function splitVideo(
         throw new Error(`Failed to create clip ${i + 1}.`);
       }
 
-      const data = await engine.readFile(outputName);
+   
+try {
+  onStatus?.(`Saving clip ${i + 1} to browser storage...`);
 
-      if (typeof data === "string") {
-        throw new Error("Invalid video output.");
-      }
+  const data = await engine.readFile(outputName);
 
-      const outputData = new ArrayBuffer(data.byteLength);
-      new Uint8Array(outputData).set(data);
+  if (typeof data === "string") {
+    throw new Error("Invalid video output.");
+  }
 
-      results.push({
-        name: outputName,
-        blob: new Blob([outputData], { type: "video/mp4" }),
-      });
+  const blob = new Blob(
+    [data as unknown as BlobPart],
+    { type: "video/mp4" }
+  );
 
-      outputFiles.push(outputName);
-      await engine.deleteFile(outputName);
+  const storedClip = await saveClip(blob, outputName);
+
+  results.push(storedClip);
+} finally {
+  // Remove only the current output file.
+  await engine.deleteFile(outputName).catch(() => {});
+}
+
 
       currentPart = i + 1;
       onProgress?.(Math.round((currentPart / totalParts) * 100));
     }
 
-    onStatus?.("Video splitting complete!");
-    return results;
-  } finally {
-    await engine.deleteFile(inputName).catch(() => {});
+    onStatus?.("All clips saved successfully!");
     onProgress?.(100);
+completed = true;
+    return results;
+  }   catch (error) {
+    if (results.length > 0) {
+    const message = getVideoErrorMessage(error);
+
+      throw new SplitVideoError(message, results);
+    }
+
+   throw new Error(getVideoErrorMessage(error));
+  }  
+finally {
+  if (progressListenerAttached) {
+    engine.off("progress", handleProgress);
+  }
+
+  if (mounted) {
+    await engine.unmount(mountPoint).catch(() => {});
+  }
+
+  await engine.deleteDir(mountPoint).catch(() => {});
+
+  if (!completed && results.length > 0) {
+    onStatus?.(
+      `${results.length} clips saved. Some clips could not be created.`
+    );
   }
 }
+
+  
+}
+
+export type { StoredClip as SplitResult };
