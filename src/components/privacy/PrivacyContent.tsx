@@ -13,7 +13,7 @@ export default function PrivacyContent() {
           </h1>
 
           <p className="mt-4 text-sm text-muted-foreground">
-            Effective Date: November 22, 2026
+            Effective Date: November 26, 2026
           </p>
 
           <p className="mt-6 leading-7 text-muted-foreground">
@@ -121,21 +121,66 @@ export default function PrivacyContent() {
             </p>
           </section>
 
+
           <section>
             <h2 className="mb-3 text-2xl font-semibold">
-              6. Data Security and Retention
+              6. Data Security, Protection, Retention and Deletion
             </h2>
+
             <p className="leading-7 text-muted-foreground">
-              YouTube authorization tokens are held in browser memory
-              rather than a permanent application database. Locally
-              generated video files may remain in browser storage until
-              removed by you or cleared by your browser.
+              SplitMyVideo uses reasonable technical and organizational
+              measures to protect information handled through our
+              application. Our website uses HTTPS to help protect
+              information transmitted between your browser and our
+              website. Requests made to Google and YouTube services
+              use secure HTTPS connections.
             </p>
+
             <p className="mt-3 leading-7 text-muted-foreground">
-              We do not maintain a permanent user profile or a server-side
-              library of your original videos and generated clips.
+              YouTube access tokens are held in browser memory and are
+              not stored in our application database. This limits
+              persistent storage of authorization credentials by
+              SplitMyVideo. Tokens held in browser memory are cleared
+              when the page is reloaded or the browser tab is closed.
+              You may also revoke access through your Google Account
+              security settings.
+            </p>
+
+            <p className="mt-3 leading-7 text-muted-foreground">
+              We use Google authorization information only to provide
+              the YouTube upload feature that you choose to use.
+              We do not sell Google user data, use it for advertising,
+              or disclose it to third parties except as necessary to
+              provide the requested functionality, comply with law,
+              or protect our services.
+            </p>
+
+            <p className="mt-3 leading-7 text-muted-foreground">
+              Original video files are processed locally in your
+              browser. Generated clips may remain in your browser's
+              local storage, including OPFS, until you delete them
+              using the available application controls or your browser
+              removes that storage. You can clear locally stored clips
+              through the app's storage controls or by clearing the
+              site's browser data.
+            </p>
+
+            <p className="mt-3 leading-7 text-muted-foreground">
+              SplitMyVideo does not maintain a permanent server-side
+              library of your original videos or generated clips.
+              We do not retain YouTube access tokens in a permanent
+              application database. When you revoke Google access,
+              we no longer use that authorization to perform YouTube
+              actions.
+            </p>
+
+            <p className="mt-3 leading-7 text-muted-foreground">
+              No method of electronic transmission or storage is
+              completely secure. We take reasonable steps to protect
+              information, but we cannot guarantee absolute security.
             </p>
           </section>
+
 
           <section>
             <h2 className="mb-3 text-2xl font-semibold">
