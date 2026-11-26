@@ -151,7 +151,46 @@ if (
 );
   }
 }
+/*export async function saveClipFromStream(
+  stream: ReadableStream<Uint8Array>,
+  name: string,
+  size: number
+): Promise<StoredClip> {
+  const directory = await getClipDirectory();
+  const id = crypto.randomUUID();
 
+  const storageInfo = await getStorageInfo();
+
+  if (storageInfo && storageInfo.available < size) {
+    throw new Error("Not enough browser storage space to save this clip.");
+  }
+
+  const clip: StoredClip = {
+    id,
+    name,
+    size,
+    type: "video/mp4",
+  };
+
+  const fileHandle = await directory.getFileHandle(id, {
+    create: true,
+  });
+
+  const writable = await fileHandle.createWritable();
+
+  try {
+    await stream.pipeTo(writable);
+
+    const clips = await readMetadata(directory);
+    clips.push(clip);
+    await writeMetadata(directory, clips);
+
+    return clip;
+  } catch (error) {
+    await directory.removeEntry(id).catch(() => {});
+    throw error;
+  }
+}*/
 export async function getStoredClips(): Promise<StoredClip[]> {
   const directory = await getClipDirectory();
   const clips = await readMetadata(directory);

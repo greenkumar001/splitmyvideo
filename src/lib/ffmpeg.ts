@@ -70,7 +70,9 @@ export async function splitVideo(
   file: File,
   duration: number,
   onProgress?: (progress: number) => void,
-  onStatus?: (message: string) => void
+  onStatus?: (message: string) => void,
+  trimStart = 0,
+  trimEnd?: number
 ): Promise<StoredClip[]> {
   if (!(file instanceof File) || file.size <= 0) {
   throw new Error("Please select a valid video file.");
@@ -123,11 +125,26 @@ if (
     video.src = url;
   });
 
-  if (!Number.isFinite(videoDuration) || videoDuration <= 0) {
-    throw new Error("Invalid video duration.");
-  }
+ if (!Number.isFinite(videoDuration) || videoDuration <= 0) {
+  throw new Error("Invalid video duration.");
+}
 
-  const totalParts = Math.ceil(videoDuration / duration);
+const selectedStart = trimStart;
+const selectedEnd = trimEnd ?? videoDuration;
+
+if (
+  !Number.isFinite(selectedStart) ||
+  !Number.isFinite(selectedEnd) ||
+  selectedStart < 0 ||
+  selectedEnd > videoDuration ||
+  selectedEnd <= selectedStart
+) {
+  throw new Error("Invalid trim range.");
+}
+
+const totalParts = Math.ceil(
+  (selectedEnd - selectedStart) / duration
+);
   const results: StoredClip[] = [];
   let completed = false;
 
@@ -158,8 +175,12 @@ const handleProgress = ({ progress }: { progress: number }) => {
 progressListenerAttached = true;
 
     for (let i = 0; i < totalParts; i++) {
-      const start = i * duration;
-      const clipDuration = Math.min(duration, videoDuration - start);
+     const start = selectedStart + i * duration;
+
+const clipDuration = Math.min(
+  duration,
+  selectedEnd - start
+);
 
       const outputName = `part_${String(i + 1).padStart(3, "0")}.mp4`;
 
@@ -171,9 +192,12 @@ progressListenerAttached = true;
         "-t", String(clipDuration),
         "-map", "0:v:0",
         "-map", "0:a?",
-        "-c:v", "libx264",
-        "-preset", "ultrafast",
-        "-crf", "23",
+       "-c:v", "libx264",
+"-preset", "ultrafast",
+"-threads", "1",
+"-filter_threads", "1",
+"-filter_complex_threads", "1",
+"-crf", "23",
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "128k",
