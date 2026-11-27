@@ -80,6 +80,7 @@ export default function VideoResults({
   const [connectingYouTube, setConnectingYouTube] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+
   useEffect(() => {
     loadGoogleIdentityScript().catch((error) => {
       console.error("Google Identity Services preload failed:", error);
@@ -161,9 +162,6 @@ export default function VideoResults({
           setUploadProgress(percentage);
         },
       });
-      console.log("YouTube token exists:", !!accessToken);
-      console.log("YouTube token length:", accessToken?.length);
-      console.log("Selected clip:", selectedClip?.name);
       alert(
         `Video uploaded successfully!\n\n` +
         `https://www.youtube.com/watch?v=${videoId}`

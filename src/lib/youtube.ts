@@ -196,9 +196,18 @@ export async function uploadYouTubeVideo({
 
   const uploadUrl = initResponse.headers.get("Location");
 
-  if (!uploadUrl) {
-    throw new Error("YouTube did not provide an upload session URL.");
-  }
+if (!uploadUrl) {
+  throw new Error("YouTube did not provide an upload session URL.");
+}
+
+const parsedUploadUrl = new URL(uploadUrl);
+
+if (
+  parsedUploadUrl.protocol !== "https:" ||
+  parsedUploadUrl.hostname !== "www.googleapis.com"
+) {
+  throw new Error("Invalid YouTube upload session URL.");
+}
 
   // Step 2: Upload video in 8 MB chunks
   const CHUNK_SIZE = 8 * 1024 * 1024;

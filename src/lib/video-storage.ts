@@ -8,7 +8,20 @@ export type StoredClip = {
 
 const FOLDER_NAME = "splitmyvideo-clips";
 const METADATA_FILE = "metadata.json";
+function isValidClipId(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
+function sanitizeClipName(name: string): string {
+  const sanitized = name
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_")
+    .trim();
 
+  if (!sanitized || sanitized.length > 200) {
+    throw new Error("Invalid video filename.");
+  }
+
+  return sanitized;
+}
 async function getClipDirectory(): Promise<FileSystemDirectoryHandle> {
   if (
     typeof navigator === "undefined" ||
@@ -40,17 +53,31 @@ async function readMetadata(
     }
 
     return data.filter(
-      (item): item is StoredClip =>
-        item !== null &&
-        typeof item === "object" &&
-        typeof item.id === "string" &&
-        typeof item.name === "string" &&
-        typeof item.size === "number" &&
-        typeof item.type === "string"
-    );
-  } catch {
+  (item): item is StoredClip =>
+    item !== null &&
+    typeof item === "object" &&
+    isValidClipId(item.id) &&
+    typeof item.name === "string" &&
+    item.name.trim().length > 0 &&
+    item.name.length <= 200 &&
+    typeof item.size === "number" &&
+    Number.isSafeInteger(item.size) &&
+    item.size >= 0 &&
+    typeof item.type === "string" &&
+    item.type.length <= 100
+);
+  }  catch (error) {
+  if (
+    error instanceof DOMException &&
+    error.name === "NotFoundError"
+  ) {
     return [];
   }
+
+  throw new Error(
+    "Saved video metadata is corrupted or unavailable."
+  );
+}
 }
 
 async function writeMetadata(
@@ -83,9 +110,12 @@ export async function checkOPFSSupport(): Promise<boolean> {
 }
 
 export async function getStorageInfo() {
-  if (!navigator.storage?.estimate) {
-    return null;
-  }
+  if (
+  typeof navigator === "undefined" ||
+  !navigator.storage?.estimate
+) {
+  return null;
+}
 
   const estimate = await navigator.storage.estimate();
 
@@ -103,7 +133,13 @@ export async function saveClip(
   blob: Blob,
   name: string
 ): Promise<StoredClip> {
-  
+  if (!(blob instanceof Blob) || blob.size === 0) {
+  throw new Error("Invalid or empty video file.");
+}
+
+if (!Number.isSafeInteger(blob.size)) {
+  throw new Error("Invalid video file size.");
+}
   const directory = await getClipDirectory();
   const id = crypto.randomUUID();
 const storageInfo = await getStorageInfo();
@@ -119,9 +155,11 @@ if (
 }
   const clip: StoredClip = {
     id,
-    name,
+    name: sanitizeClipName(name),
     size: blob.size,
-    type: blob.type || "video/mp4",
+    type: blob.type.startsWith("video/")
+  ? blob.type
+  : "application/octet-stream",
   };
 
   const fileHandle = await directory.getFileHandle(id, {
@@ -151,46 +189,7 @@ if (
 );
   }
 }
-/*export async function saveClipFromStream(
-  stream: ReadableStream<Uint8Array>,
-  name: string,
-  size: number
-): Promise<StoredClip> {
-  const directory = await getClipDirectory();
-  const id = crypto.randomUUID();
 
-  const storageInfo = await getStorageInfo();
-
-  if (storageInfo && storageInfo.available < size) {
-    throw new Error("Not enough browser storage space to save this clip.");
-  }
-
-  const clip: StoredClip = {
-    id,
-    name,
-    size,
-    type: "video/mp4",
-  };
-
-  const fileHandle = await directory.getFileHandle(id, {
-    create: true,
-  });
-
-  const writable = await fileHandle.createWritable();
-
-  try {
-    await stream.pipeTo(writable);
-
-    const clips = await readMetadata(directory);
-    clips.push(clip);
-    await writeMetadata(directory, clips);
-
-    return clip;
-  } catch (error) {
-    await directory.removeEntry(id).catch(() => {});
-    throw error;
-  }
-}*/
 export async function getStoredClips(): Promise<StoredClip[]> {
   const directory = await getClipDirectory();
   const clips = await readMetadata(directory);
@@ -198,13 +197,17 @@ export async function getStoredClips(): Promise<StoredClip[]> {
   const validClips: StoredClip[] = [];
 
   for (const clip of clips) {
-    try {
-      await directory.getFileHandle(clip.id);
-      validClips.push(clip);
-    } catch {
-      // Ignore metadata entries whose video file no longer exists.
-    }
+  if (!isValidClipId(clip.id)) {
+    continue;
   }
+
+  try {
+    await directory.getFileHandle(clip.id);
+    validClips.push(clip);
+  } catch {
+    // Ignore metadata entries whose video file no longer exists.
+  }
+}
 
   if (validClips.length !== clips.length) {
     await writeMetadata(directory, validClips);
@@ -216,6 +219,9 @@ export async function getStoredClips(): Promise<StoredClip[]> {
 export async function readClip(
   clip: StoredClip
 ): Promise<Blob> {
+  if (!isValidClipId(clip.id)) {
+  throw new Error("Invalid clip ID.");
+}
   const directory = await getClipDirectory();
   const fileHandle = await directory.getFileHandle(clip.id);
 
@@ -225,16 +231,20 @@ export async function readClip(
 export async function deleteClip(
   clip: StoredClip
 ): Promise<void> {
+  if (!isValidClipId(clip.id)) {
+    throw new Error("Invalid clip ID.");
+  }
+
   const directory = await getClipDirectory();
-
-  await directory.removeEntry(clip.id);
-
   const clips = await readMetadata(directory);
+
   const updatedClips = clips.filter(
     (item) => item.id !== clip.id
   );
 
   await writeMetadata(directory, updatedClips);
+
+  await directory.removeEntry(clip.id);
 }
 
 
@@ -244,6 +254,10 @@ export async function clearAllClips(): Promise<void> {
   const clips = await readMetadata(directory);
 
   for (const clip of clips) {
+    if (!isValidClipId(clip.id)) {
+      continue;
+    }
+
     await directory.removeEntry(clip.id).catch(() => {});
   }
 
